@@ -41,8 +41,16 @@ contract besteamDAO is Ownable, ReentrancyGuard {
     }
 
     mapping(address => Member) public members;
-    uint256 public constant playerCost = 3 ether; // Costo in wei (esempio)
-    uint256 public constant presidentCost = 10 ether; // Costo in wei (esempio)
+    uint256 public  playerCost = 3 ether; // Costo in wei (esempio)
+    uint256 public  presidentCost = 10 ether; // Costo in wei (esempio)
+
+    function setPlayerCost (uint256 _amount, uint256 _decimals) public onlyOwner {
+        playerCost = _amount * (10 ** _decimals);
+    }
+
+    function setPresidentCost (uint256 _amount, uint256 _decimals) public onlyOwner {
+        presidentCost = _amount * (10 ** _decimals);
+    }
 
     function joinAsPlayer() external payable nonReentrant {
         require(msg.value >= playerCost, "Insufficient funds");
