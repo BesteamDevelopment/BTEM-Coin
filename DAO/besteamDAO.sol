@@ -1,45 +1,31 @@
 // SPDX-License-Identifier: MIT
-
-/*
-M#"""""""'M                      dP                                M""""""'YMM MMP"""""""MM MMP"""""YMM 
-##  mmmm. `M                     88                                M  mmmm. `M M' .mmmm  MM M' .mmm. `M 
-#'        .M .d8888b. .d8888b. d8888P .d8888b. .d8888b. 88d8b.d8b. M  MMMMM  M M         `M M  MMMMM  M 
-M#  MMMb.'YM 88ooood8 Y8ooooo.   88   88ooood8 88'  `88 88'`88'`88 M  MMMMM  M M  MMMMM  MM M  MMMMM  M 
-M#  MMMM'  M 88.  ...       88   88   88.  ... 88.  .88 88  88  88 M  MMMM' .M M  MMMMM  MM M. `MMM' .M 
-M#       .;M `88888P' `88888P'   dP   `88888P' `88888P8 dP  dP  dP M       .MM M  MMMMM  MM MMb     dMM 
-M#########M                                                        MMMMMMMMMMM MMMMMMMMMMMM MMMMMMMMMMM 
-
-
-          _           __            ______________  __             
-   ____ _(_)_  ______/ /__ _   __  / ____/_  __/ / / /             
-  / __ `/ / / / / __  / _ \ | / / / __/   / / / /_/ /              
- / /_/ / / /_/ / /_/ /  __/ |/ / / /___  / / / __  /               
- \__, /_/\__,_/\__,_/\___/|___(_)_____/ /_/ /_/ /_/                
-/____/                                                             
-                                                                                                  
-*/
-
 pragma solidity ^0.8.20;
+
+// Importa le interfacce necessarie per il funzionamento del contratto.
 import "./interface.sol";
 
+// Definizione del contratto principale della DAO Besteam.
 contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
 
-    // MANAGER
+    // Mapping per gestire i manager del contratto, oltre all'owner.
     mapping(address => bool) public contractManagers;
+    // Evento emesso quando un manager del contratto viene aggiunto o rimosso.
     event ContractManager(address indexed manager, bool status);
 
+    // Modificatore per controllare che la funzione sia chiamata solo dall'owner o da un manager.
     modifier onlyOwnerOrContractManager() {
         require(msg.sender == owner() || contractManagers[msg.sender], "Caller is not authorized");
         _;
     }
 
+    // Permette all'owner di aggiungere o rimuovere manager del contratto.
     function manageContractManager(address _manager, bool _status) public onlyOwner {
         require(_manager != address(0), "Invalid address");
-        contractManagers[_manager] = true;
+        contractManagers[_manager] = _status;
         emit ContractManager(_manager, _status);
     }
 
-    // SECURITY
+    // Metodi per mettere in pausa o riprendere le operazioni del contratto.
     function pause() public onlyOwner {
         _pause();
     }
@@ -48,6 +34,7 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         _unpause();
     }
 
+    // Permette il trasferimento di token ERC20 da questo contratto.
     function transferAnyNewERC20Token(address _tokenAddr, address _to, uint _amount) public onlyOwner {  
         require(NewIERC20(_tokenAddr).transfer(_to, _amount), "Could not transfer out tokens!");
     }
@@ -56,8 +43,10 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         OldIERC20(_tokenAddr).transfer(_to, _amount);
     }
 
+    // Funzione per ricevere Ether nel contratto.
     receive() external payable {}
 
+    // Permette all'owner di ritirare l'Ether accumulato nel contratto.
     function withdraw() public onlyOwner {
         uint256 balance = address(this).balance;
         require(balance > 0, "No GAS balance to withdraw");
@@ -65,27 +54,27 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         require(success, "GAS withdrawal failed");
     }
 
-    // DAO TOKEN
+    // Token Besteam e relative funzioni.
     IERC20 public tokenBesteam;
     uint256 public besteamDecimals;
 
+    // Imposta l'indirizzo del token Besteam e i suoi decimali.
     function setBesteamAddress(address _tokenBesteam, uint256 _besteamDecimals) public onlyOwnerOrContractManager {
         tokenBesteam = IERC20(_tokenBesteam);
         besteamDecimals = _besteamDecimals;
     }
 
+    // Restituisce il saldo di token Besteam di un utente.
     function getBesteamBalance(address _userAddress) public view returns (uint256) {
         return tokenBesteam.balanceOf(_userAddress);
     }
 
-    // ROLE DAO
+    // Definizione dei ruoli all'interno della DAO e struttura dei membri.
     enum Role { None, Player, President, Counselor, Shareholder, Besteam }
-
     struct Member {
         Role role;
         uint256 membershipExpiry;
     }
-
     struct PendingMember {
         address addr;
         Role role;
@@ -95,19 +84,23 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
     mapping(address => Member) public members;
     PendingMember[] public pendingMembers;
 
-    uint256 public  playerCost = 30 * (10 ** 18); // Costo in wei (esempio)
-    uint256 public  presidentCost = 100 * (10 ** 18); // Costo in wei (esempio)
+    uint256 public playerCost = 30 * (10 ** 18); // Costo in wei per diventare un Player.
+    uint256 public presidentCost = 100 * (10 ** 18); // Costo in wei per diventare un President.
 
-    function setMember (address _userAddress, uint256 _days, Role _role) public onlyOwnerOrContractManager {
+    // Imposta un membro con un ruolo e una durata della membership.
+    function setMember(address _userAddress, uint256 _days, Role _role) public onlyOwnerOrContractManager {
         members[_userAddress] = Member({role: _role, membershipExpiry: block.timestamp + ((1 days) * _days)});
     }
-    
-    function setPlayerCost (uint256 _amountPlayer, uint256 _amountPresident, uint256 _decimals) public onlyOwner {
+
+    // Imposta i costi per diventare Player o President.
+    function setPlayerCost(uint256 _amountPlayer, uint256 _amountPresident, uint256 _decimals) public onlyOwner {
         playerCost = _amountPlayer * (10 ** _decimals);
         presidentCost = _amountPresident * (10 ** _decimals);
     }
 
+    // Permette agli utenti di unirsi alla DAO pagando in token Besteam.
     function joinDAO(Role _roleType) external nonReentrant {
+        // Il costo varia in base al ruolo.
         uint256 cost = 0;
         if (_roleType == Role.Player) {
             cost = playerCost;
@@ -116,14 +109,15 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         }
         require(tokenBesteam.allowance(msg.sender, address(this)) >= cost, "Token allowance too low");
         require(tokenBesteam.transferFrom(msg.sender, address(this), cost), "Token transfer failed");
+        // Verifica se l'utente è già in attesa di approvazione.
         uint256 memberIndex = getPendingMemberIndex(msg.sender);
         require(memberIndex == 9999999999, "Member already pending");
-        // Controlla se l'utente è già un membro approvato
+        // Aggiunge l'utente alla lista dei membri pendenti o aggiorna il suo ruolo.
         if (members[msg.sender].role == Role.None) {
             pendingMembers.push(PendingMember({
-            addr: msg.sender,
-            role: _roleType,
-            payment: cost
+                addr: msg.sender,
+                role: _roleType,
+                payment: cost
             }));
         } else {
             members[msg.sender].role = _roleType;
@@ -131,53 +125,50 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         }
     }
 
+    // Restituisce l'indice di un membro pendente, se presente.
     function getPendingMemberIndex(address memberAddress) public view returns (uint256) {
         for (uint256 i = 0; i < pendingMembers.length; i++) {
             if (pendingMembers[i].addr == memberAddress) {
-                return uint256(i);
+                return i;
             }
         }
-        return 9999999999; // Ritorna 9999999999 se il membro non è trovato
+        return 9999999999; // Indica che il membro non è stato trovato.
     }
 
-
+    // Approva o rifiuta un membro pendente, trasferendo i token o rimborsandoli.
     function approveMember(address memberAddress, bool approved) external onlyOwnerOrContractManager {
         uint256 index = getPendingMemberIndex(memberAddress);
         require(index != 9999999999, "Member not found in pending list");
         PendingMember memory pendingMember = pendingMembers[index];
         if (approved) {
-            // Trasferisci i token al wallet della compagnia
             require(tokenBesteam.transfer(owner(), pendingMember.payment), "Token transfer to company failed");
             members[pendingMember.addr] = Member({
                 role: pendingMember.role,
                 membershipExpiry: block.timestamp + 365 days
             });
         } else {
-            // Rimborso del 95% dei token
             uint256 refundAmount = pendingMember.payment * 95 / 100;
             require(tokenBesteam.transfer(pendingMember.addr, refundAmount), "Token refund failed");
         }
-        // Rimuovi il membro dalla lista dei pending
         removePendingMember(index);
     }
 
-
+    // Rimuove un membro pendente dall'elenco.
     function removePendingMember(uint256 index) internal {
         require(index < pendingMembers.length, "Invalid index");
-
-        // Shifta tutti gli elementi dopo l'indice verso sinistra di uno
         for (uint i = index; i < pendingMembers.length - 1; i++) {
             pendingMembers[i] = pendingMembers[i + 1];
         }
         pendingMembers.pop();
     }
-    
+
+    // Verifica lo stato della membership di un utente.
     function checkMembershipStatus(address user) external view returns (Role, bool) {
         Member memory member = members[user];
         return (member.role, member.membershipExpiry > block.timestamp);
     }
 
-    // ELECTION
+    // Struttura e mapping per gestire le elezioni.
     struct Election {
         uint256 id;
         uint256 endTime;
@@ -187,12 +178,12 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         address[] candidates;
         bool isCandidateRegistrationOpen;
     }
-
     mapping(address => mapping(uint256 => bool)) public alreadyVoted;
     mapping(address => mapping(uint256 => bool)) public isAlreadyACandidate;
     Election public currentElection;
     uint256 public nextElectionId;
 
+    // Apre la registrazione dei candidati per una nuova elezione.
     function openCandidateRegistration(uint256 _maxCandidates) public onlyOwner {
         require(!currentElection.isActive, "An election is already active");
         currentElection.maxCandidates = _maxCandidates;
@@ -201,6 +192,7 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         nextElectionId += 1;
     }
 
+    // Permette ai membri di registrarsi come candidati se idonei.
     function registerAsCandidate() public nonReentrant {
         require(currentElection.isCandidateRegistrationOpen, "Candidate registration is not open");
         require(currentElection.maxCandidates > 0, "No available slots");
@@ -211,6 +203,7 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         currentElection.maxCandidates -= 1;
     }
 
+    // Chiude la registrazione dei candidati e avvia l'elezione.
     function closeCandidateRegistrationAndStartElection(uint256 _durationInDays) public onlyOwner {
         require(currentElection.isCandidateRegistrationOpen, "Candidate registration is not open");
         currentElection.isCandidateRegistrationOpen = false;
@@ -218,17 +211,18 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         currentElection.isActive = true;
     }
 
+    // Permette ai membri di votare per i candidati durante l'elezione.
     function voteForCounselor(address _candidate) public nonReentrant {
         require(members[msg.sender].role >= Role.Player, "Not eligible to vote");
         require(currentElection.isActive, "No active election");
         require(block.timestamp < currentElection.endTime, "Election has ended");
-        
         require(!alreadyVoted[msg.sender][currentElection.id], "Already voted");
-        require(isAlreadyACandidate[msg.sender][currentElection.id], "Invalid candidate");
+        require(isAlreadyACandidate[_candidate][currentElection.id], "Invalid candidate");
         currentElection.votes[_candidate] += 1;
         alreadyVoted[msg.sender][currentElection.id] = true;
     }
 
+    // Restituisce i risultati dell'elezione, includendo i candidati e i loro voti.
     function getElectionResults() public view returns (address[] memory, uint256[] memory) {
         require(!currentElection.isActive, "Election is still active");
         address[] memory candidates = currentElection.candidates;
@@ -239,27 +233,44 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         return (candidates, votes);
     }
 
-    //PROPOSAL
+    // Struttura, mapping e eventi per la gestione delle proposte.
     struct Proposal {
-        string description; // Descrizione generale della proposta
-        string[10] optionDescriptions; // Descrizioni delle 10 opzioni di voto
-        uint256 deadline; // Data e ora di scadenza della proposta
-        uint256[10] voteCounts; // Conteggio dei voti per ciascuna opzione
-        uint256 roleType; // Ruolo richiesto per votare su questa proposta (1 Sondaggi Collettivi - 2 Votazioni nominali)
-        uint256 quorum;
-        mapping(address => bool) voted; // Tracciamento di chi ha già votato
+        string description; // Descrizione generale della proposta.
+        string[10] optionDescriptions; // Descrizioni delle 10 opzioni di voto.
+        uint256 deadline; // Data e ora di scadenza della proposta.
+        uint256[10] voteCounts; // Conteggio dei voti per ciascuna opzione.
+        uint256 roleType; // 1 per Sondaggi Collettivi, 2 per Votazioni Nominative.
+        uint256 quorum; // Numero minimo di voti necessari per considerare la proposta valida.
+        mapping(address => bool) voted; // Tracciamento di chi ha già votato.
     }
-
-    uint256 public nextProposalId = 0; // ID per la prossima proposta
-    mapping(uint256 => Proposal) private proposals; // Mapping delle proposte
-    mapping(uint256 => bool) public isApproved;
+    uint256 public nextProposalId = 0; // ID per la prossima proposta.
+    mapping(uint256 => Proposal) private proposals; // Mapping delle proposte.
+    mapping(uint256 => bool) public isApproved; // Tracciamento delle proposte approvate.
     event NewProposal(uint256 indexed proposalId, string description, uint256 deadline);
     event Voted(uint256 indexed proposalId, address voter);
     
-    function createProposal(string memory _description, string[10] memory _optionDescriptions, uint256 _durationInDays, uint256 _roleType, uint256 _quorum) public nonReentrant {
-        if(_roleType == 1) {require(members[msg.sender].role == Role.Besteam, "Not a DAO Admin");} 
-        else if (_roleType == 2) {require(members[msg.sender].role == Role.Besteam || members[msg.sender].role == Role.Counselor || members[msg.sender].role == Role.Shareholder, "Not a DAO Admin");} 
-        else {revert("Invalid role type for proposal");}
+    // Crea una nuova proposta, specificando descrizione, opzioni, durata, ruolo e quorum.
+    function createProposal(
+        string memory _description, 
+        string[10] memory _optionDescriptions, 
+        uint256 _durationInDays, 
+        uint256 _roleType, 
+        uint256 _quorum
+    ) public nonReentrant {
+        // Controlla che il creatore della proposta abbia il ruolo appropriato.
+        if(_roleType == 1) {
+            require(members[msg.sender].role == Role.Besteam, "Not a DAO Admin");
+        } else if (_roleType == 2) {
+            require(
+                members[msg.sender].role == Role.Besteam || 
+                members[msg.sender].role == Role.Counselor || 
+                members[msg.sender].role == Role.Shareholder, 
+                "Not a DAO Admin"
+            );
+        } else {
+            revert("Invalid role type for proposal");
+        }
+        // Inizializza e memorizza la nuova proposta.
         uint256 proposalId = nextProposalId;
         Proposal storage proposal = proposals[proposalId];
         proposal.description = _description;
@@ -268,23 +279,26 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         }
         proposal.deadline = block.timestamp + (_durationInDays * 1 days);
         proposal.roleType = _roleType;
-        proposal.quorum = _quorum; 
+        proposal.quorum = _quorum;
         emit NewProposal(proposalId, _description, proposal.deadline);
         nextProposalId++;
     }
     
+    // Permette ai membri di votare su una proposta, specificando l'ID della proposta e l'opzione scelta.
     function voteOnProposal(uint256 _proposalId, uint256 _optionIndex) public nonReentrant {
         require(_proposalId < nextProposalId, "Invalid proposal ID");
         require(_optionIndex < 10, "Invalid option index");
+        // Verifica che il membro non sia l'admin della DAO e che possa votare sulla proposta.
         require(members[msg.sender].role != Role.Besteam, "DAO Admin");
         Proposal storage proposal = proposals[_proposalId];
         require(block.timestamp < proposal.deadline, "Voting has ended for this proposal");
         require(!proposal.voted[msg.sender], "Already voted");
-        uint256 voteWeight = 1;
+        uint256 voteWeight = 1; // Peso del voto standard.
+        // Determina il peso del voto in base al ruolo del membro e al tipo di proposta.
         if (proposal.roleType == 1) {
             require(members[msg.sender].role == Role.Player || members[msg.sender].role == Role.President, "Not a Player or President");
             if (members[msg.sender].role == Role.President){
-                voteWeight = 3;
+                voteWeight = 3; // Peso maggiore per il Presidente nei Sondaggi Collettivi.
             }
         } else if (proposal.roleType == 2) {
             require(members[msg.sender].role == Role.Counselor || members[msg.sender].role == Role.Shareholder, "Not a Counselor or Shareholder");
@@ -296,33 +310,34 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         emit Voted(_proposalId, msg.sender);
     }
 
+    // Restituisce le opzioni di voto, i conteggi dei voti e se il quorum è stato raggiunto per una proposta.
     function getProposalOptionsAndVoteCounts(uint256 _proposalId) public view returns (string[10] memory, uint256[10] memory, bool) {
         require(_proposalId < nextProposalId, "Invalid proposal ID");
         Proposal storage proposal = proposals[_proposalId];
         uint256 totalVotes = 0;
-        bool quorumReached;
+        bool quorumReached = false;
+        // Calcola il totale dei voti ricevuti e determina se il quorum è stato raggiunto.
         for (uint256 i = 0; i < proposal.voteCounts.length; i++) {
             totalVotes += proposal.voteCounts[i];
         }
         if (totalVotes >= proposal.quorum) {
             quorumReached = true;
-        } else {
-            quorumReached = false;
         }
         return (proposal.optionDescriptions, proposal.voteCounts, quorumReached);
     }
 
+    // Restituisce gli ID delle proposte attive in un dato intervallo.
     function getActiveProposalsInRange(uint256 startIndex, uint256 endIndex) public view returns (uint256[] memory) {
         require(startIndex < endIndex, "Start index must be less than end index");
         require(endIndex <= nextProposalId, "End index out of bounds");
         uint256 activeCount = 0;
-        // Determina il numero di proposte attive nell'intervallo
+        // Determina il numero di proposte attive nell'intervallo specificato.
         for (uint256 i = startIndex; i < endIndex; i++) {
             if (proposals[i].deadline > block.timestamp) {
                 activeCount++;
             }
         }
-        // Raccogli gli ID delle proposte attive nell'intervallo
+        // Raccoglie gli ID delle proposte attive nell'intervallo.
         uint256[] memory activeProposals = new uint256[](activeCount);
         uint256 currentIndex = 0;
         for (uint256 i = startIndex; i < endIndex; i++) {
@@ -334,19 +349,21 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         return activeProposals;
     }
 
+    // Verifica l'esito di una proposta al termine del periodo di votazione, basandosi sul quorum.
     function checkProposalOutcome(uint256 _proposalId) public {
         require(_proposalId < nextProposalId, "Invalid proposal ID");
         Proposal storage proposal = proposals[_proposalId];
         require(block.timestamp > proposal.deadline, "Voting is still active");
         uint256 totalVotes = 0;
+        // Calcola il totale dei voti per determinare se il quorum è stato raggiunto.
         for (uint256 i = 0; i < proposal.voteCounts.length; i++) {
             totalVotes += proposal.voteCounts[i];
         }
+        // Imposta lo stato di approvazione della proposta in base al raggiungimento del quorum.
         if (totalVotes >= proposal.quorum) {
             isApproved[_proposalId] = true;
         } else {
             isApproved[_proposalId] = false;
         }
     }
-
 }
