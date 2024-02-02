@@ -194,6 +194,7 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         address[] candidates;
         bool isCandidateRegistrationOpen;
     }
+
     mapping(address => mapping(uint256 => bool)) public alreadyVoted;
     mapping(address => mapping(uint256 => bool)) public isAlreadyACandidate;
     Election public currentElection;
@@ -264,6 +265,7 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         uint256 winningOptionIndex; // Indice dell'opzione vincente.
         uint256 highestVoteCount; // Conteggio dei voti per l'opzione vincente.
     }
+
     uint256 public nextProposalId = 0; // ID per la prossima proposta.
     mapping(uint256 => Proposal) public proposals; // Mapping delle proposte.
     event NewProposal(uint256 indexed proposalId, string description, uint256 deadline);
