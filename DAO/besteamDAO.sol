@@ -100,7 +100,6 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
 
     // Permette agli utenti di unirsi alla DAO pagando in token Besteam.
     function joinDAO(Role _roleType) external nonReentrant {
-        // Il costo varia in base al ruolo.
         uint256 cost = 0;
         if (_roleType == Role.Player) {
             cost = playerCost;
@@ -109,10 +108,8 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         }
         require(tokenBesteam.allowance(msg.sender, address(this)) >= cost, "Token allowance too low");
         require(tokenBesteam.transferFrom(msg.sender, address(this), cost), "Token transfer failed");
-        // Verifica se l'utente è già in attesa di approvazione.
         uint256 memberIndex = getPendingMemberIndex(msg.sender);
         require(memberIndex == 9999999999, "Member already pending");
-        // Aggiunge l'utente alla lista dei membri pendenti o aggiorna il suo ruolo.
         if (members[msg.sender].role == Role.None) {
             pendingMembers.push(PendingMember({
                 addr: msg.sender,
@@ -242,10 +239,14 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         uint256 roleType; // 1 per Sondaggi Collettivi, 2 per Votazioni Nominative.
         uint256 quorum; // Numero minimo di voti necessari per considerare la proposta valida.
         mapping(address => bool) voted; // Tracciamento di chi ha già votato.
+        bool isPending; // Indica se la proposta è in attesa di essere permessa.
+        bool isPermitted; // Indica se la proposta è permessa per la votazione.
+        bool isPassed; // Indica se la proposta è stata approvata.
+        uint256 winningOptionIndex; // Indice dell'opzione vincente.
+        uint256 highestVoteCount; // Conteggio dei voti per l'opzione vincente.
     }
     uint256 public nextProposalId = 0; // ID per la prossima proposta.
-    mapping(uint256 => Proposal) private proposals; // Mapping delle proposte.
-    mapping(uint256 => bool) public isApproved; // Tracciamento delle proposte approvate.
+    mapping(uint256 => Proposal) public proposals; // Mapping delle proposte.
     event NewProposal(uint256 indexed proposalId, string description, uint256 deadline);
     event Voted(uint256 indexed proposalId, address voter);
     
@@ -257,9 +258,11 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         uint256 _roleType, 
         uint256 _quorum
     ) public nonReentrant {
-        // Controlla che il creatore della proposta abbia il ruolo appropriato.
+        uint256 proposalId = nextProposalId;
+        Proposal storage proposal = proposals[proposalId];
         if(_roleType == 1) {
             require(members[msg.sender].role == Role.Besteam, "Not a DAO Admin");
+            proposal.isPermitted = true;
         } else if (_roleType == 2) {
             require(
                 members[msg.sender].role == Role.Besteam || 
@@ -267,12 +270,14 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
                 members[msg.sender].role == Role.Shareholder, 
                 "Not a DAO Admin"
             );
+            if (members[msg.sender].role == Role.Besteam) {
+                proposal.isPermitted = true;
+            } else {
+                proposal.isPending = true;
+            }
         } else {
             revert("Invalid role type for proposal");
         }
-        // Inizializza e memorizza la nuova proposta.
-        uint256 proposalId = nextProposalId;
-        Proposal storage proposal = proposals[proposalId];
         proposal.description = _description;
         for (uint i = 0; i < _optionDescriptions.length; i++) {
             proposal.optionDescriptions[i] = _optionDescriptions[i];
@@ -288,20 +293,19 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
     function voteOnProposal(uint256 _proposalId, uint256 _optionIndex) public nonReentrant {
         require(_proposalId < nextProposalId, "Invalid proposal ID");
         require(_optionIndex < 10, "Invalid option index");
-        // Verifica che il membro non sia l'admin della DAO e che possa votare sulla proposta.
-        require(members[msg.sender].role != Role.Besteam, "DAO Admin");
+        require(members[msg.sender].role != Role.Besteam, "DAO Admin not allowed to vote");
         Proposal storage proposal = proposals[_proposalId];
         require(block.timestamp < proposal.deadline, "Voting has ended for this proposal");
         require(!proposal.voted[msg.sender], "Already voted");
-        uint256 voteWeight = 1; // Peso del voto standard.
-        // Determina il peso del voto in base al ruolo del membro e al tipo di proposta.
+        uint256 voteWeight = 1;
         if (proposal.roleType == 1) {
             require(members[msg.sender].role == Role.Player || members[msg.sender].role == Role.President, "Not a Player or President");
             if (members[msg.sender].role == Role.President){
-                voteWeight = 3; // Peso maggiore per il Presidente nei Sondaggi Collettivi.
+                voteWeight = 3;
             }
         } else if (proposal.roleType == 2) {
             require(members[msg.sender].role == Role.Counselor || members[msg.sender].role == Role.Shareholder, "Not a Counselor or Shareholder");
+            require(proposal.isPermitted == true, "Proposal not permitted at the moment");
         } else {
             revert("Not eligible to vote on this proposal");
         }
@@ -310,19 +314,26 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         emit Voted(_proposalId, msg.sender);
     }
 
+    // Gestisce il permesso di una proposta in base al verdetto dell'owner o manager.
+    function manageProposal(uint256 _proposalId, bool _verdict) public onlyOwnerOrContractManager {
+        Proposal storage proposal = proposals[_proposalId];
+        if (_verdict) {
+            proposal.isPermitted = true;
+            proposal.isPending = false;
+        } else {
+            proposal.isPermitted = false;
+        }
+    }
+
     // Restituisce le opzioni di voto, i conteggi dei voti e se il quorum è stato raggiunto per una proposta.
     function getProposalOptionsAndVoteCounts(uint256 _proposalId) public view returns (string[10] memory, uint256[10] memory, bool) {
         require(_proposalId < nextProposalId, "Invalid proposal ID");
         Proposal storage proposal = proposals[_proposalId];
         uint256 totalVotes = 0;
-        bool quorumReached = false;
-        // Calcola il totale dei voti ricevuti e determina se il quorum è stato raggiunto.
         for (uint256 i = 0; i < proposal.voteCounts.length; i++) {
             totalVotes += proposal.voteCounts[i];
         }
-        if (totalVotes >= proposal.quorum) {
-            quorumReached = true;
-        }
+        bool quorumReached = totalVotes >= proposal.quorum;
         return (proposal.optionDescriptions, proposal.voteCounts, quorumReached);
     }
 
@@ -331,39 +342,43 @@ contract besteamDAO is Ownable, ReentrancyGuard, Pausable {
         require(startIndex < endIndex, "Start index must be less than end index");
         require(endIndex <= nextProposalId, "End index out of bounds");
         uint256 activeCount = 0;
-        // Determina il numero di proposte attive nell'intervallo specificato.
         for (uint256 i = startIndex; i < endIndex; i++) {
             if (proposals[i].deadline > block.timestamp) {
                 activeCount++;
             }
         }
-        // Raccoglie gli ID delle proposte attive nell'intervallo.
         uint256[] memory activeProposals = new uint256[](activeCount);
         uint256 currentIndex = 0;
         for (uint256 i = startIndex; i < endIndex; i++) {
             if (proposals[i].deadline > block.timestamp) {
-                activeProposals[currentIndex] = i;
-                currentIndex++;
+                activeProposals[currentIndex++] = i;
             }
         }
         return activeProposals;
     }
 
-    // Verifica l'esito di una proposta al termine del periodo di votazione, basandosi sul quorum.
-    function checkProposalOutcome(uint256 _proposalId) public {
+    // Verifica il risultato di una proposta dopo la chiusura della votazione, determinando se il quorum è stato raggiunto e quale opzione ha vinto.
+    function checkResult(uint256 _proposalId) public onlyOwnerOrContractManager returns (bool, uint256, uint256) {
         require(_proposalId < nextProposalId, "Invalid proposal ID");
         Proposal storage proposal = proposals[_proposalId];
         require(block.timestamp > proposal.deadline, "Voting is still active");
         uint256 totalVotes = 0;
-        // Calcola il totale dei voti per determinare se il quorum è stato raggiunto.
+        uint256 highestVoteCount = 0;
+        uint256 winningOptionIndex = 0;
         for (uint256 i = 0; i < proposal.voteCounts.length; i++) {
-            totalVotes += proposal.voteCounts[i];
+            uint256 optionVotes = proposal.voteCounts[i];
+            totalVotes += optionVotes;
+            if (optionVotes > highestVoteCount) {
+                highestVoteCount = optionVotes;
+                winningOptionIndex = i;
+            }
         }
-        // Imposta lo stato di approvazione della proposta in base al raggiungimento del quorum.
-        if (totalVotes >= proposal.quorum) {
-            isApproved[_proposalId] = true;
-        } else {
-            isApproved[_proposalId] = false;
+        bool quorumReached = totalVotes >= proposal.quorum;
+        proposal.isPassed = quorumReached && highestVoteCount > 0;
+        if (proposal.isPassed) {
+            proposal.winningOptionIndex = winningOptionIndex;
+            proposal.highestVoteCount = highestVoteCount;
         }
+        return (proposal.isPassed, winningOptionIndex, totalVotes);
     }
 }
