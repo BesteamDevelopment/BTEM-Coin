@@ -1,6 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+/*
+M#"""""""'M                      dP                                M""""""'YMM MMP"""""""MM MMP"""""YMM 
+##  mmmm. `M                     88                                M  mmmm. `M M' .mmmm  MM M' .mmm. `M 
+#'        .M .d8888b. .d8888b. d8888P .d8888b. .d8888b. 88d8b.d8b. M  MMMMM  M M         `M M  MMMMM  M 
+M#  MMMb.'YM 88ooood8 Y8ooooo.   88   88ooood8 88'  `88 88'`88'`88 M  MMMMM  M M  MMMMM  MM M  MMMMM  M 
+M#  MMMM'  M 88.  ...       88   88   88.  ... 88.  .88 88  88  88 M  MMMM' .M M  MMMMM  MM M. `MMM' .M 
+M#       .;M `88888P' `88888P'   dP   `88888P' `88888P8 dP  dP  dP M       .MM M  MMMMM  MM MMb     dMM 
+M#########M                                                        MMMMMMMMMMM MMMMMMMMMMMM MMMMMMMMMMM 
+
+
+          _           __            ______________  __             
+   ____ _(_)_  ______/ /__ _   __  / ____/_  __/ / / /             
+  / __ `/ / / / / __  / _ \ | / / / __/   / / / /_/ /              
+ / /_/ / / /_/ / /_/ /  __/ |/ / / /___  / / / __  /               
+ \__, /_/\__,_/\__,_/\___/|___(_)_____/ /_/ /_/ /_/                
+/____/                                                             
+                                                                                                  
+*/
+
 // Importa le interfacce necessarie per il funzionamento del contratto.
 import "./interface.sol";
 
